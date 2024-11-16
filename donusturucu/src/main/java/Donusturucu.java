@@ -10,22 +10,28 @@ import java.awt.event.ActionListener;
 import java.io.File;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-
+import java.util.logging.FileHandler;
+import java.util.logging.Logger;
+import java.util.logging.SimpleFormatter;
 
 public class Donusturucu extends JFrame {
+    private static final Logger logger = Logger.getLogger(Donusturucu.class.getName());  // Logger tanımı
     private JPanel mainPanel;
     private JTextField countField;
     private JButton createSectionsButton;
     private JButton convertButton;
     private File[][] files;  
     private ExecutorService executor = Executors.newFixedThreadPool(10); 
+
     public Donusturucu() {
         setTitle("Dosya Dönüştürücü");
         setSize(600, 400);
         setDefaultCloseOperation(EXIT_ON_CLOSE);
         setLayout(new BorderLayout());
+        
+        setupLogger();  // Logger'ı başlatıyoruz
+        logger.info("Dönüştürücü uygulaması başlatıldı.");
 
-      
         JPanel topPanel = new JPanel();
         topPanel.add(new JLabel("Kaç dosya bölümü açılacak:"));
         countField = new JTextField(5);
@@ -34,55 +40,74 @@ public class Donusturucu extends JFrame {
         topPanel.add(createSectionsButton);
         add(topPanel, BorderLayout.NORTH);
 
-       
         mainPanel = new JPanel();
         mainPanel.setLayout(new GridLayout(0, 1)); 
         JScrollPane scrollPane = new JScrollPane(mainPanel);
         add(scrollPane, BorderLayout.CENTER);
 
-       
         convertButton = new JButton("Dönüştür");
         add(convertButton, BorderLayout.SOUTH);
 
- 
         createSectionsButton.addActionListener(new CreateSectionsAction());
         convertButton.addActionListener(new ConvertAction());
     }
 
-   
+    private void setupLogger() {
+        try {
+            FileHandler fileHandler = new FileHandler("donusturucu.log", true);
+            fileHandler.setFormatter(new SimpleFormatter());
+            logger.addHandler(fileHandler);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
     private class CreateSectionsAction implements ActionListener {
         @Override
         public void actionPerformed(ActionEvent e) {
-            mainPanel.removeAll();  
-            int count = Integer.parseInt(countField.getText());
-            files = new File[count][];  
+            mainPanel.removeAll();
+            try {
+                int count = Integer.parseInt(countField.getText());
+                logger.info("Kullanıcı " + count + " dosya bölümü oluşturmak istedi.");
+                files = new File[count][];
 
-            for (int i = 0; i < count; i++) {
-                JPanel section = new JPanel();
-                section.setBorder(BorderFactory.createTitledBorder("Bölüm " + (i + 1)));
-                JButton selectButton = new JButton("Dosya Seç");
-                int index = i; 
-                selectButton.addActionListener(ev -> selectFiles(index));
-                section.add(selectButton);
-                mainPanel.add(section);
+                for (int i = 0; i < count; i++) {
+                    JPanel section = new JPanel();
+                    section.setBorder(BorderFactory.createTitledBorder("Bölüm " + (i + 1)));
+                    JButton selectButton = new JButton("Dosya Seç");
+                    int index = i;
+                    selectButton.addActionListener(ev -> selectFiles(index));
+                    section.add(selectButton);
+                    mainPanel.add(section);
+                }
+                mainPanel.revalidate();
+                mainPanel.repaint();
+            } catch (NumberFormatException ex) {
+                logger.severe("Geçersiz giriş: " + ex.getMessage());
+                JOptionPane.showMessageDialog(Donusturucu.this, "Lütfen geçerli bir sayı girin!", "Hata", JOptionPane.ERROR_MESSAGE);
             }
-            mainPanel.revalidate();
-            mainPanel.repaint();
         }
-    }  
+    }
+
     private void selectFiles(int index) {
         JFileChooser fileChooser = new JFileChooser();
         fileChooser.setMultiSelectionEnabled(true);
         int result = fileChooser.showOpenDialog(this);
         if (result == JFileChooser.APPROVE_OPTION) {
             files[index] = fileChooser.getSelectedFiles();
+            logger.info("Kullanıcı " + (index + 1) + ". bölüm için dosyaları seçti.");
         }
     }
 
-    // Dönüştürme işlemi
     private class ConvertAction implements ActionListener {
         @Override
         public void actionPerformed(ActionEvent e) {
+            if (files == null || files.length == 0) {
+                logger.warning("Dönüştürme işlemi başlatılamadı, dosya seçilmedi.");
+                JOptionPane.showMessageDialog(Donusturucu.this, "Lütfen dosyaları seçin!", "Hata", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+
             for (File[] fileArray : files) {
                 if (fileArray != null) {
                     for (File file : fileArray) {
@@ -93,39 +118,37 @@ public class Donusturucu extends JFrame {
         }
     }
 
-private void convertFile(File file) {
-    try {
-        String extension = getFileExtension(file);
-        File outputDir = new File(System.getProperty("user.home"), "Desktop/dönüştürüldü");
-        if (!outputDir.exists()) {
-            outputDir.mkdir(); 
+    private void convertFile(File file) {
+        try {
+            logger.info("Dönüştürme işlemi başladı: " + file.getName());
+            String extension = getFileExtension(file);
+            File outputDir = new File(System.getProperty("user.home"), "Desktop/dönüştürüldü");
+            if (!outputDir.exists()) {
+                outputDir.mkdir();
+            }
+
+            String outputFileName = "converted_" + file.getName().replace("." + extension, ".wav");
+            File target = new File(outputDir, outputFileName);
+
+            AudioAttributes audio = new AudioAttributes();
+            audio.setCodec("pcm_s16le");
+            EncodingAttributes attrs = new EncodingAttributes();
+            attrs.setFormat("wav");
+            attrs.setAudioAttributes(audio);
+
+            new Encoder().encode(new MultimediaObject(file), target, attrs);
+
+            SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(this,
+                file.getName() + " başarıyla dönüştürüldü ve " + outputFileName + " olarak kaydedildi!",
+                "Dönüştürme Tamamlandı", JOptionPane.INFORMATION_MESSAGE));
+
+            logger.info("Dönüştürme işlemi başarıyla tamamlandı: " + file.getName());
+        } catch (Exception e) {
+            logger.severe("Dönüştürme sırasında hata oluştu: " + e.getMessage());
+            e.printStackTrace();
         }
-
-       
-        String outputFileName = "converted_" + file.getName().replace("."+extension, ".wav");
-        File target = new File(outputDir, outputFileName);
-
-        AudioAttributes audio = new AudioAttributes();
-        audio.setCodec("pcm_s16le"); 
-        EncodingAttributes attrs = new EncodingAttributes();
-        attrs.setFormat("wav");
-        attrs.setAudioAttributes(audio);
-
-     
-        new Encoder().encode(new MultimediaObject(file), target, attrs);
-
-        
-        SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(this, 
-            file.getName() + " başarıyla dönüştürüldü ve " + outputFileName + " olarak kaydedildi!", 
-            "Dönüştürme Tamamlandı", JOptionPane.INFORMATION_MESSAGE));
-
-    } catch (Exception e) {
-        e.printStackTrace(); 
     }
-}
 
-
-    
     private String getFileExtension(File file) {
         String name = file.getName();
         int lastIndex = name.lastIndexOf(".");
@@ -138,4 +161,4 @@ private void convertFile(File file) {
             app.setVisible(true);
         });
     }
-} 
+}
