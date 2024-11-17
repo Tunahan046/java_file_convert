@@ -8,6 +8,7 @@ import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.File;
+import java.text.Normalizer;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.logging.FileHandler;
@@ -15,7 +16,7 @@ import java.util.logging.Logger;
 import java.util.logging.SimpleFormatter;
 
 public class Donusturucu extends JFrame {
-    private static final Logger logger = Logger.getLogger(Donusturucu.class.getName());  // Logger tanımı
+    private static final Logger logger = Logger.getLogger(Donusturucu.class.getName());
     private JPanel mainPanel;
     private JTextField countField;
     private JButton createSectionsButton;
@@ -28,8 +29,8 @@ public class Donusturucu extends JFrame {
         setSize(600, 400);
         setDefaultCloseOperation(EXIT_ON_CLOSE);
         setLayout(new BorderLayout());
-        
-        setupLogger();  // Logger'ı başlatıyoruz
+
+        setupLogger();
         logger.info("Dönüştürücü uygulaması başlatıldı.");
 
         JPanel topPanel = new JPanel();
@@ -119,15 +120,21 @@ public class Donusturucu extends JFrame {
     }
 
     private void convertFile(File file) {
+        long startTime = System.currentTimeMillis();
         try {
             logger.info("Dönüştürme işlemi başladı: " + file.getName());
+            
+            // Türkçe karakter dönüşümü
+            String sanitizedFileName = sanitizeFileName(file.getName());
+            logger.info("Türkçe karakterler temizlendi: " + sanitizedFileName);
+
             String extension = getFileExtension(file);
             File outputDir = new File(System.getProperty("user.home"), "Desktop/dönüştürüldü");
             if (!outputDir.exists()) {
                 outputDir.mkdir();
             }
 
-            String outputFileName = "converted_" + file.getName().replace("." + extension, ".wav");
+            String outputFileName = "converted_" + sanitizedFileName.replace("." + extension, ".wav");
             File target = new File(outputDir, outputFileName);
 
             AudioAttributes audio = new AudioAttributes();
@@ -141,12 +148,25 @@ public class Donusturucu extends JFrame {
             SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(this,
                 file.getName() + " başarıyla dönüştürüldü ve " + outputFileName + " olarak kaydedildi!",
                 "Dönüştürme Tamamlandı", JOptionPane.INFORMATION_MESSAGE));
-
             logger.info("Dönüştürme işlemi başarıyla tamamlandı: " + file.getName());
         } catch (Exception e) {
             logger.severe("Dönüştürme sırasında hata oluştu: " + e.getMessage());
             e.printStackTrace();
+        } finally {
+            long endTime = System.currentTimeMillis();
+            logger.info("Dönüştürme süresi: " + (endTime - startTime) + " ms");
         }
+    }
+
+    private String sanitizeFileName(String fileName) {
+        String[][] turkishChars = {
+            {"ç", "c"}, {"ğ", "g"}, {"ı", "i"}, {"ö", "o"}, {"ş", "s"}, {"ü", "u"},
+            {"Ç", "C"}, {"Ğ", "G"}, {"İ", "I"}, {"Ö", "O"}, {"Ş", "S"}, {"Ü", "U"}
+        };
+        for (String[] pair : turkishChars) {
+            fileName = fileName.replace(pair[0], pair[1]);
+        }
+        return fileName;
     }
 
     private String getFileExtension(File file) {
