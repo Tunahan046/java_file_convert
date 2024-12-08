@@ -10,15 +10,13 @@ import java.io.File;
  *
  * @author Admin
  */
-
-//ses dönüştürme dosyası
 public class AudioConverter {
 
     public AudioConverter() {
     }
 
     void convertAudio(File file, String wav) {
-        throw new UnsupportedOperationException("Not supported yet."); 
+        throw new UnsupportedOperationException("Not supported yet."); // Generated from nbfs://nbhost/SystemFileSystem/Templates/Classes/Code/GeneratedMethodBody
     }
     
 }

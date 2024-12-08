@@ -16,9 +16,16 @@
     </properties>
 <dependencies>
 <dependency>
-            <groupId>ws.schild</groupId>
-            <artifactId>jave-core</artifactId>
-            <version>2.7.1</version>
-        </dependency>
+    <groupId>ws.schild</groupId>
+    <artifactId>jave-core</artifactId>
+    <version>3.5.0</version> <!-- Sürümü güncel tutun -->
+</dependency>
+<dependency>
+    <groupId>com.itextpdf</groupId>
+    <artifactId>itextpdf</artifactId>
+    <version>5.5.13.2</version>
+</dependency>
+
+
 </dependencies>
 </project>
