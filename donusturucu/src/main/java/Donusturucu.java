@@ -1,20 +1,14 @@
-import com.itextpdf.text.Document;
-import com.itextpdf.text.Image;
-import com.itextpdf.text.pdf.PdfWriter;
+import ws.schild.jave.Encoder;
+import ws.schild.jave.AudioAttributes;
+import ws.schild.jave.EncodingAttributes;
+import ws.schild.jave.MultimediaObject;
+
 import javax.swing.*;
-import javax.swing.filechooser.FileSystemView;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.File;
-import java.io.FileOutputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.text.Normalizer;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.logging.FileHandler;
@@ -27,17 +21,8 @@ public class Donusturucu extends JFrame {
     private JTextField countField;
     private JButton createSectionsButton;
     private JButton convertButton;
-    private File[][] files;
-    private JComboBox<String>[] formatSelectors;
-    private ExecutorService executor = Executors.newFixedThreadPool(10);
-
-    private static final Map<String, String[]> FORMAT_OPTIONS = new HashMap<>();
-    static {
-        FORMAT_OPTIONS.put("image", new String[]{"JPG", "JPEG", "PNG", "BMP", "PDF"});
-        FORMAT_OPTIONS.put("video", new String[]{"MP4", "MKV", "MOV"});
-        FORMAT_OPTIONS.put("audio", new String[]{"MP3", "WAV", "WMA" ,"MP4" });
-
-    }
+    private File[][] files;  
+    private ExecutorService executor = Executors.newFixedThreadPool(10); 
 
     public Donusturucu() {
         setTitle("Dosya Dönüştürücü");
@@ -57,7 +42,7 @@ public class Donusturucu extends JFrame {
         add(topPanel, BorderLayout.NORTH);
 
         mainPanel = new JPanel();
-        mainPanel.setLayout(new GridLayout(0, 1));
+        mainPanel.setLayout(new GridLayout(0, 1)); 
         JScrollPane scrollPane = new JScrollPane(mainPanel);
         add(scrollPane, BorderLayout.CENTER);
 
@@ -86,17 +71,14 @@ public class Donusturucu extends JFrame {
                 int count = Integer.parseInt(countField.getText());
                 logger.info("Kullanıcı " + count + " dosya bölümü oluşturmak istedi.");
                 files = new File[count][];
-                formatSelectors = new JComboBox[count];
 
                 for (int i = 0; i < count; i++) {
                     JPanel section = new JPanel();
                     section.setBorder(BorderFactory.createTitledBorder("Bölüm " + (i + 1)));
-                    section.setLayout(new BoxLayout(section, BoxLayout.Y_AXIS));
                     JButton selectButton = new JButton("Dosya Seç");
                     int index = i;
-                    selectButton.addActionListener(ev -> selectFiles(index, section));
+                    selectButton.addActionListener(ev -> selectFiles(index));
                     section.add(selectButton);
-
                     mainPanel.add(section);
                 }
                 mainPanel.revalidate();
@@ -108,42 +90,13 @@ public class Donusturucu extends JFrame {
         }
     }
 
-    private void selectFiles(int index, JPanel section) {
+    private void selectFiles(int index) {
         JFileChooser fileChooser = new JFileChooser();
         fileChooser.setMultiSelectionEnabled(true);
         int result = fileChooser.showOpenDialog(this);
         if (result == JFileChooser.APPROVE_OPTION) {
             files[index] = fileChooser.getSelectedFiles();
             logger.info("Kullanıcı " + (index + 1) + ". bölüm için dosyaları seçti.");
-
-            section.removeAll();
-            String fileType = getFileType(files[index][0]); // Assume all selected files are of the same type
-            String[] formats = FORMAT_OPTIONS.get(fileType);
-
-            if (formats != null) {
-                JComboBox<String> formatCombo = new JComboBox<>(formats);
-                formatSelectors[index] = formatCombo;
-                section.add(new JLabel("Format Seç:"));
-                section.add(formatCombo);
-            } else {
-                section.add(new JLabel("Desteklenmeyen dosya türü"));
-            }
-
-            for (File file : files[index]) {
-                JPanel fileInfoPanel = new JPanel();
-                fileInfoPanel.setLayout(new FlowLayout(FlowLayout.LEFT));
-
-                ImageIcon icon = (ImageIcon) FileSystemView.getFileSystemView().getSystemIcon(file);
-                JLabel iconLabel = new JLabel(icon);
-                fileInfoPanel.add(iconLabel);
-
-                JLabel nameLabel = new JLabel(file.getName());
-                fileInfoPanel.add(nameLabel);
-
-                section.add(fileInfoPanel);
-            }
-            section.revalidate();
-            section.repaint();
         }
     }
 
@@ -156,119 +109,53 @@ public class Donusturucu extends JFrame {
                 return;
             }
 
-            for (int i = 0; i < files.length; i++) {
-                if (formatSelectors[i] != null) {
-                    String selectedFormat = (String) formatSelectors[i].getSelectedItem();
-                    logger.info("Seçilen dönüştürme formatı: " + selectedFormat);
-
-                    if (files[i] != null) {
-                        for (File file : files[i]) {
-                            executor.submit(() -> convertFile(file, selectedFormat));
-                        }
+            for (File[] fileArray : files) {
+                if (fileArray != null) {
+                    for (File file : fileArray) {
+                        executor.submit(() -> convertFile(file));
                     }
                 }
             }
         }
     }
 
-    private void convertFile(File file, String format) {
+    private void convertFile(File file) {
         long startTime = System.currentTimeMillis();
         try {
             logger.info("Dönüştürme işlemi başladı: " + file.getName());
-
+            
+            // Türkçe karakter dönüşümü
             String sanitizedFileName = sanitizeFileName(file.getName());
-            String inputExtension = getFileExtension(file);
-            Path outputDir = Paths.get(System.getProperty("user.home"), "Desktop", "dönüştürüldü");
-            Files.createDirectories(outputDir);
+            logger.info("Türkçe karakterler temizlendi: " + sanitizedFileName);
 
-            String outputFileName = "converted_" + sanitizedFileName.replace("." + inputExtension, "." + format.toLowerCase());
-            Path targetPath = outputDir.resolve(outputFileName);
-
-            if (format.equalsIgnoreCase("PDF") && isImageFile(inputExtension)) {
-                convertImageToPdf(file, targetPath.toString());
-            } else {
-                List<String> command = new ArrayList<>();
-                command.add("C:\\ffmpeg\\ffmpeg.exe");
-                command.add("-i");
-                command.add(file.getAbsolutePath());
-
-                // Add specific FFmpeg options based on file type and format
-                if (isAudioFile(inputExtension)) {
-                    command.add("-acodec");
-                    if (format.equalsIgnoreCase("mp3")) {
-                        command.add("libmp3lame");
-                        command.add("-b:a");
-                        command.add("192k");
-                    } else if (format.equalsIgnoreCase("wav")) {
-                        command.add("pcm_s16le");
-                    } else {
-                        command.add("copy");
-                    }
-                } else if (isVideoFile(inputExtension)) {
-                    command.add("-c:v");
-                    command.add("libx264");
-                    command.add("-c:a");
-                    command.add("aac");
-                } else if (isImageFile(inputExtension)) {
-                    command.add("-vf");
-                    command.add("scale=iw:ih");
-                }
-
-                command.add(targetPath.toString());
-
-                ProcessBuilder builder = new ProcessBuilder(command);
-                builder.redirectErrorStream(true);
-                Process process = builder.start();
-                process.waitFor();
+            String extension = getFileExtension(file);
+            File outputDir = new File(System.getProperty("user.home"), "Desktop/dönüştürüldü");
+            if (!outputDir.exists()) {
+                outputDir.mkdir();
             }
 
-            if (Files.exists(targetPath)) {
-                SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(this,
-                    file.getName() + " başarıyla dönüştürüldü ve " + targetPath + " olarak kaydedildi!",
-                    "Dönüştürme Tamamlandı", JOptionPane.INFORMATION_MESSAGE));
-                logger.info("Dönüştürme işlemi başarıyla tamamlandı: " + targetPath);
-            } else {
-                throw new RuntimeException("Dosya oluşturuldu ancak bulunamadı: " + targetPath);
-            }
+            String outputFileName = "converted_" + sanitizedFileName.replace("." + extension, ".wav");
+            File target = new File(outputDir, outputFileName);
+
+            AudioAttributes audio = new AudioAttributes();
+            audio.setCodec("pcm_s16le");
+            EncodingAttributes attrs = new EncodingAttributes();
+            attrs.setFormat("wav");
+            attrs.setAudioAttributes(audio);
+
+            new Encoder().encode(new MultimediaObject(file), target, attrs);
+
+            SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(this,
+                file.getName() + " başarıyla dönüştürüldü ve " + outputFileName + " olarak kaydedildi!",
+                "Dönüştürme Tamamlandı", JOptionPane.INFORMATION_MESSAGE));
+            logger.info("Dönüştürme işlemi başarıyla tamamlandı: " + file.getName());
         } catch (Exception e) {
             logger.severe("Dönüştürme sırasında hata oluştu: " + e.getMessage());
-            SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(this,
-                "Dönüştürme sırasında hata oluştu: " + e.getMessage(),
-                "Hata", JOptionPane.ERROR_MESSAGE));
             e.printStackTrace();
         } finally {
             long endTime = System.currentTimeMillis();
             logger.info("Dönüştürme süresi: " + (endTime - startTime) + " ms");
         }
-    }
-
-    private boolean isAudioFile(String extension) {
-        return extension.equalsIgnoreCase("mp3") || extension.equalsIgnoreCase("wav") ||
-               extension.equalsIgnoreCase("aac") || extension.equalsIgnoreCase("ogg");
-    }
-
-    private boolean isVideoFile(String extension) {
-        return extension.equalsIgnoreCase("mp4") || extension.equalsIgnoreCase("avi") ||
-               extension.equalsIgnoreCase("mkv") || extension.equalsIgnoreCase("mov") ||
-               extension.equalsIgnoreCase("wmv");
-    }
-
-    private boolean isImageFile(String extension) {
-        return extension.equalsIgnoreCase("jpg") || extension.equalsIgnoreCase("jpeg") ||
-               extension.equalsIgnoreCase("png") || extension.equalsIgnoreCase("gif") ||
-               extension.equalsIgnoreCase("bmp") || extension.equalsIgnoreCase("tiff");
-    }
-
-    private String getFileType(File file) {
-        String extension = getFileExtension(file).toLowerCase();
-        if (FORMAT_OPTIONS.get("image").length > 0 && FORMAT_OPTIONS.get("image")[0].toLowerCase().contains(extension)) {
-            return "image";
-        } else if (FORMAT_OPTIONS.get("video").length > 0 && FORMAT_OPTIONS.get("video")[0].toLowerCase().contains(extension)) {
-            return "video";
-        } else if (FORMAT_OPTIONS.get("audio").length > 0 && FORMAT_OPTIONS.get("audio")[0].toLowerCase().contains(extension)) {
-            return "audio";
-        }
-        return "unknown";
     }
 
     private String sanitizeFileName(String fileName) {
@@ -288,18 +175,6 @@ public class Donusturucu extends JFrame {
         return (lastIndex == -1) ? "" : name.substring(lastIndex + 1);
     }
 
-    private void convertImageToPdf(File imageFile, String outputPath) throws Exception {
-        Document document = new Document();
-        PdfWriter.getInstance(document, new FileOutputStream(outputPath));
-        document.open();
-        Image image = Image.getInstance(imageFile.getAbsolutePath());
-        float scaler = ((document.getPageSize().getWidth() - document.leftMargin() - document.rightMargin()) / image.getWidth()) * 100;
-        image.scalePercent(scaler);
-        document.add(image);
-        document.close();
-    }
-
-
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> {
             Donusturucu app = new Donusturucu();
@@ -307,4 +182,3 @@ public class Donusturucu extends JFrame {
         });
     }
 }
-
