@@ -22,6 +22,8 @@ import java.util.concurrent.Executors;
 import java.util.logging.FileHandler;
 import java.util.logging.Logger;
 import java.util.logging.SimpleFormatter;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 public class Donusturucu extends JFrame {
     private static final Logger logger = Logger.getLogger(Donusturucu.class.getName());
@@ -32,6 +34,7 @@ public class Donusturucu extends JFrame {
     private File[][] files;
     private JComboBox<String>[] formatSelectors;
     private ExecutorService executor = Executors.newFixedThreadPool(10);
+    private Lock lock = new ReentrantLock();
 
     private static final Map<String, String[]> FORMAT_OPTIONS = new HashMap<>();
     static {
@@ -48,7 +51,7 @@ public class Donusturucu extends JFrame {
 
         setupLogger();
         logger.info("Dönüştürücü uygulaması başlatıldı.");
-
+        //GUI bileşenlerinin oluşturulması ve yerleştirilmesi
         JPanel topPanel = new JPanel();
         topPanel.add(new JLabel("Kaç dosya bölümü açılacak:"));
         countField = new JTextField(5);
@@ -118,7 +121,7 @@ public class Donusturucu extends JFrame {
             logger.info("Kullanıcı " + (index + 1) + ". bölüm için dosyaları seçti.");
 
             section.removeAll();
-            String fileType = getFileType(files[index][0]); // Assume all selected files are of the same type
+            String fileType = getFileType(files[index][0]); 
             String[] formats = FORMAT_OPTIONS.get(fileType);
 
             if (formats != null) {
@@ -149,28 +152,50 @@ public class Donusturucu extends JFrame {
     }
 
     private class ConvertAction implements ActionListener {
-        @Override
-        public void actionPerformed(ActionEvent e) {
-            if (files == null || files.length == 0) {
-                logger.warning("Dönüştürme işlemi başlatılamadı, dosya seçilmedi.");
-                JOptionPane.showMessageDialog(Donusturucu.this, "Lütfen dosyaları seçin!", "Hata", JOptionPane.ERROR_MESSAGE);
-                return;
-            }
+    @Override
+    public void actionPerformed(ActionEvent e) {
+        if (files == null || files.length == 0) {
+            logger.warning("Conversion cannot start, no files selected.");
+            JOptionPane.showMessageDialog(Donusturucu.this, "Please select files first!", "Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
 
-            for (int i = 0; i < files.length; i++) {
-                if (formatSelectors[i] != null) {
-                    String selectedFormat = (String) formatSelectors[i].getSelectedItem();
-                    logger.info("Seçilen dönüştürme formatı: " + selectedFormat);
+        for (int i = 0; i < files.length; i++) {
+            if (formatSelectors[i] != null) {
+                String selectedFormat = (String) formatSelectors[i].getSelectedItem();
+                logger.info("Selected format for conversion: " + selectedFormat);
 
-                    if (files[i] != null) {
-                        for (File file : files[i]) {
-                            executor.submit(() -> convertFile(file, selectedFormat));
-                        }
+                if (files[i] != null) {
+                    for (File file : files[i]) {
+                        int sectionIndex = i; // Bölümün index'ini yakalıyoruz
+                        executor.submit(() -> {
+                            long startTime = System.currentTimeMillis();
+                            convertFile(file, selectedFormat);
+                            long endTime = System.currentTimeMillis();
+                            long duration = endTime - startTime; // Duration in milliseconds
+
+                            // Lock kullanarak süreyi güvenli şekilde yazdırıyoruz
+                            lock.lock();
+                            try {
+                                SwingUtilities.invokeLater(() -> {
+                                    Component[] components = mainPanel.getComponents();
+                                    JPanel sectionPanel = (JPanel) components[sectionIndex];
+                                    JLabel durationLabel = new JLabel("Completed " + duration + " ms");
+                                    sectionPanel.add(durationLabel);
+                                    sectionPanel.revalidate();
+                                    sectionPanel.repaint();
+                                });
+                            } finally {
+                                lock.unlock();
+                            }
+                        });
                     }
                 }
             }
         }
     }
+}
+
 
     private void convertFile(File file, String format) {
     long startTime = System.currentTimeMillis(); // Başlangıç zamanı
@@ -229,7 +254,7 @@ public class Donusturucu extends JFrame {
 
             int exitCode = process.waitFor();
             if (exitCode != 0) {
-                throw new RuntimeException("FFmpeg process exited with code " + exitCode);
+                throw new RuntimeException("FFmpeg işlemi kodla sonlandırıldı " + exitCode);
             }
         }
 
@@ -240,10 +265,7 @@ public class Donusturucu extends JFrame {
             logger.info("Dönüştürme işlemi başarıyla tamamlandı: " + targetPath);
             System.out.println("Dönüştürme işlemi tamamlandı: " + file.getName() + " Süre: " + duration + " ms");
 
-            SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(this,
-                file.getName() + " başarıyla dönüştürüldü ve " + targetPath + " olarak kaydedildi!\n" +
-                "Dönüştürme süresi: " + duration + " ms",
-                "Dönüştürme Tamamlandı", JOptionPane.INFORMATION_MESSAGE));
+           
         } else {
             throw new RuntimeException("Dosya oluşturuldu ancak bulunamadı: " + targetPath);
         }
@@ -307,19 +329,16 @@ public class Donusturucu extends JFrame {
 
     private void convertImageToPdf(File imageFile, String outputPath) throws Exception {
         Document document = new Document();
-        PdfWriter.getInstance(document, new FileOutputStream(outputPath));
+        PdfWriter.getInstance(document, new FileOutputStream(outputPath));//Yeni bir PDF dosyası oluşturmak için diskte bir yazma işlemi başlatır.
         document.open();
-        Image image = Image.getInstance(imageFile.getAbsolutePath());
+        Image image = Image.getInstance(imageFile.getAbsolutePath());//Diskten resim dosyasını okur ve belleğe yükler.
         float scaler = ((document.getPageSize().getWidth() - document.leftMargin() - document.rightMargin()) / image.getWidth()) * 100;
         image.scalePercent(scaler);
-        document.add(image);
-        document.close();
+        document.add(image);//Bellekteki resim içeriği PDF belgesine eklenir.
+        document.close();// PDF dosyası sonlandırılır ve diske yazma işlemi tamamlanır.
     }
 
-    public static void main(String[] args) {
-        SwingUtilities.invokeLater(() -> {
-            Donusturucu app = new Donusturucu();
-            app.setVisible(true);
-        });
+   public static void main(String[] args) {
+        SwingUtilities.invokeLater(() -> new Donusturucu().setVisible(true));
     }
 }
